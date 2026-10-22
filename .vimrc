@@ -1,154 +1,181 @@
-" ============================================================================
-" .vimrc para programar en Rust desde la consola (Canaima / Debian)
-" Requisitos: Vim >= 9.0.0438, Node.js >= 22.15, git, curl, rustup con
-"             los componentes rust-analyzer y rust-src instalados.
-" Instalación de vim-plug (una sola vez):
-"   curl -fLo ~/.vim/autoload/plug.vim --create-dirs \
-"     https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim
-" Luego, dentro de Vim:  :PlugInstall
-" ============================================================================
+#!/usr/bin/env bash
+#
+# instalar_entorno_vim_rust.sh
+# Automatiza el paso a paso: Vim + git + curl, Node.js, coc-settings.json,
+# vim-plug, archivos de configuración y PlugInstall.
+#
+# Uso:
+#   ./instalar_entorno_vim_rust.sh                 # Node vía NodeSource (Vía A, requiere sudo)
+#   ./instalar_entorno_vim_rust.sh --node-local    # Node binario en ~/.local/node (Vía B, sin sudo para Node)
+#   ./instalar_entorno_vim_rust.sh --node-local --linea 22   # usar la línea 22.x en vez de 24.x
+#   ./instalar_entorno_vim_rust.sh --vimrc <archivo-o-URL>   # usar otro .vimrc en vez del de GitHub
+#
+set -euo pipefail
 
-" ---- 1. Base ---------------------------------------------------------------
-" Estas dos líneas van antes que cualquier complemento: la codificación debe
-" estar fijada antes de que airline construya sus símbolos.
-set nocompatible
-set encoding=utf-8
-set fileencodings=utf-8,latin1
-scriptencoding utf-8
+# ---------------------------------------------------------------------------
+# Parámetros
+# ---------------------------------------------------------------------------
+NODE_MODO="nodesource"   # nodesource | local
+NODE_LINEA="24"          # solo aplica al modo local: 24 (LTS vigente) o 22
+VIMRC_ORIGEN="https://raw.githubusercontent.com/jmartinez1000/vim-recursos/refs/heads/main/.vimrc"
 
-" Al existir ~/.vimrc, Vim deja de cargar defaults.vim (ruler, showcmd,
-" scrolloff, etc.). Se recupera de forma explícita.
-unlet! skip_defaults_vim
-source $VIMRUNTIME/defaults.vim
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --node-local)      NODE_MODO="local"; shift ;;
+    --node-nodesource) NODE_MODO="nodesource"; shift ;;
+    --linea)           NODE_LINEA="${2:?Falta el número de línea (22 o 24)}"; shift 2 ;;
+    --vimrc)           VIMRC_ORIGEN="${2:?Falta la ruta o URL del vimrc}"; shift 2 ;;
+    -h|--help)
+      grep '^#' "$0" | sed 's/^# \{0,1\}//'
+      exit 0 ;;
+    *) echo "Opción desconocida: $1 (use --help)"; exit 1 ;;
+  esac
+done
 
-" La tecla líder se define ANTES de cualquier mapeo que la use.
-let mapleader = ' '
+# Directorio donde reside el script (para localizar los archivos de configuración)
+DIR_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-" ---- 2. Complementos -------------------------------------------------------
-call plug#begin('~/.vim/plugged')
-Plug 'preservim/nerdtree'                          " árbol de archivos
-Plug 'neoclide/coc.nvim', {'branch': 'release'}    " cliente LSP (rust-analyzer)
-Plug 'rust-lang/rust.vim'                          " sintaxis, rustfmt, :Cargo
-Plug 'vim-airline/vim-airline'                     " barra de estado
-call plug#end()
+paso()  { printf '\n\033[1;34m==> %s\033[0m\n' "$*"; }
+ok()    { printf '\033[1;32m    [OK]\033[0m %s\n' "$*"; }
+error() { printf '\033[1;31m    [ERROR]\033[0m %s\n' "$*" >&2; exit 1; }
 
-" ---- 3. Interfaz -----------------------------------------------------------
-syntax enable
-filetype plugin indent on
-set number
-set relativenumber
-set hlsearch
-set incsearch
-set showmatch
-set hidden
-set signcolumn=yes
-set laststatus=2
-set cmdheight=2
-set updatetime=300
-set scrolloff=5
-set nobackup
-set nowritebackup
+# ---------------------------------------------------------------------------
+# 1.1 Vim, git y curl
+# ---------------------------------------------------------------------------
+paso "1.1 Instalando vim, git y curl"
+sudo apt update
+sudo apt install -y vim git curl
 
-" Sin ratón: en consola pura el ratón de Vim interfiere con la selección y
-" el pegado del propio terminal. Quien lo quiera, que cambie a mouse=a.
-set mouse=
+VIM_LINEA="$(vim --version | head -1)"
+echo "    $VIM_LINEA"
 
-" Color verdadero solo si el terminal lo anuncia; en una TTY o en un
-" terminal de 256 colores la opción rompe la paleta.
-if has('termguicolors') && ($COLORTERM ==# 'truecolor' || $COLORTERM ==# '24bit')
-  set termguicolors
-endif
+# Verificar versión 9.0 o superior
+VIM_VER="$(echo "$VIM_LINEA" | grep -oE '[0-9]+\.[0-9]+' | head -1)"
+if [[ "$(printf '%s\n' "9.0" "$VIM_VER" | sort -V | head -1)" != "9.0" ]]; then
+  error "Se requiere Vim 9.0 o superior; se detectó $VIM_VER. En Ubuntu/Debian antiguos considere el PPA jonathonf/vim o compilar desde fuente."
+fi
+ok "Vim $VIM_VER"
 
-" ---- 4. Sangría: cuatro espacios, como exige rustfmt -----------------------
-set tabstop=4
-set softtabstop=4
-set shiftwidth=4
-set expandtab
-
-" ---- 5. NERDTree -----------------------------------------------------------
-nnoremap <silent> <C-n> :NERDTreeToggle<CR>
-" Cambia el directorio de trabajo cuando cambia la raíz del árbol.
-let g:NERDTreeChDirMode = 2
-" Abrir el árbol si Vim arranca sin archivos.
-autocmd VimEnter * if argc() == 0 && exists(':NERDTree') | NERDTree | endif
-" Cerrar Vim si la única ventana que queda es el árbol.
-autocmd BufEnter * if winnr('$') == 1 && exists('b:NERDTree') && b:NERDTree.isTabTree() | quit | endif
-
-" ---- 6. coc.nvim: autocompletado y navegación ------------------------------
-let g:coc_global_extensions = ['coc-rust-analyzer']
-
-" Forzar el menú de completado: Ctrl-Espacio (en Vim de consola llega como <C-@>).
-if has('nvim')
-  inoremap <silent><expr> <C-Space> coc#refresh()
+# Verificar característica +terminal (usada por :Crun y :Ctest)
+if vim --version | grep -qo '+terminal'; then
+  ok "Característica +terminal presente"
 else
-  inoremap <silent><expr> <C-@> coc#refresh()
-endif
+  error "El Vim instalado no tiene +terminal. Instale un paquete con soporte completo (p. ej. vim-gtk3 o vim-nox)."
+fi
 
-function! CheckBackspace() abort
-  let col = col('.') - 1
-  return !col || getline('.')[col - 1] =~# '\s'
-endfunction
+# ---------------------------------------------------------------------------
+# 1.2 Node.js 22 o superior
+# ---------------------------------------------------------------------------
+NODE_MINIMO="22.15.0"
 
-inoremap <silent><expr> <TAB>
-      \ coc#pum#visible() ? coc#pum#next(1) :
-      \ CheckBackspace() ? "\<TAB>" :
-      \ coc#refresh()
-inoremap <expr> <S-TAB> coc#pum#visible() ? coc#pum#prev(1) : "\<C-h>"
-inoremap <expr> <Up>    coc#pum#visible() ? coc#pum#prev(1) : "\<Up>"
-inoremap <expr> <Down>  coc#pum#visible() ? coc#pum#next(1) : "\<Down>"
-inoremap <silent><expr> <CR> coc#pum#visible() ? coc#pum#select_confirm()
-      \ : "\<C-g>u\<CR>\<C-r>=coc#on_enter()\<CR>"
+node_version_valida() {
+  command -v node >/dev/null 2>&1 || return 1
+  local v
+  v="$(node --version | sed 's/^v//')"
+  [[ "$(printf '%s\n' "$NODE_MINIMO" "$v" | sort -V | head -1)" == "$NODE_MINIMO" ]]
+}
 
-let g:coc_snippet_next = '<TAB>'
-let g:coc_snippet_prev = '<S-TAB>'
+if node_version_valida; then
+  paso "1.2 Node.js ya presente: $(node --version) (>= v$NODE_MINIMO) — se omite la instalación"
+elif [[ "$NODE_MODO" == "nodesource" ]]; then
+  paso "1.2 Instalando Node.js 22 vía repositorio NodeSource (Vía A, requiere sudo)"
+  curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+  sudo apt install -y nodejs
+else
+  paso "1.2 Instalando Node.js línea ${NODE_LINEA}.x como binario en ~/.local/node (Vía B, sin sudo)"
+  # Obtener el nombre exacto del archivo para no depender de un parche escrito a mano
+  ARCHIVO="$(curl -fsS "https://nodejs.org/dist/latest-v${NODE_LINEA}.x/" \
+    | grep -o "node-v[0-9.]*-linux-x64.tar.xz" | head -1)"
+  [[ -n "$ARCHIVO" ]] || error "No se pudo determinar el archivo en nodejs.org/dist/latest-v${NODE_LINEA}.x/"
+  echo "    Archivo detectado: $ARCHIVO"
+  mkdir -p ~/.local/node
+  curl -fsSL "https://nodejs.org/dist/latest-v${NODE_LINEA}.x/$ARCHIVO" \
+    | tar -xJ --strip-components=1 -C ~/.local/node
+  # Agregar al PATH solo si aún no está en ~/.bashrc
+  if ! grep -q '\.local/node/bin' ~/.bashrc 2>/dev/null; then
+    echo 'export PATH="$HOME/.local/node/bin:$PATH"' >> ~/.bashrc
+    ok 'PATH agregado a ~/.bashrc'
+  fi
+  export PATH="$HOME/.local/node/bin:$PATH"
+fi
 
-nmap <silent> gd <Plug>(coc-definition)
-nmap <silent> gy <Plug>(coc-type-definition)
-nmap <silent> gi <Plug>(coc-implementation)
-nmap <silent> gr <Plug>(coc-references)
-" Con líder: "rn" a secas anulaba el comando r seguido de n.
-nmap <silent> <leader>rn <Plug>(coc-rename)
-nmap <silent> <leader>a  <Plug>(coc-codeaction-cursor)
-nmap <silent> <leader>f  <Plug>(coc-format-selected)
-xmap <silent> <leader>f  <Plug>(coc-format-selected)
-" Documentación flotante del símbolo bajo el cursor.
-nnoremap <silent> K :call CocActionAsync('doHover')<CR>
-" Recorrer diagnósticos (errores y advertencias) del compilador.
-nmap <silent> [g <Plug>(coc-diagnostic-prev)
-nmap <silent> ]g <Plug>(coc-diagnostic-next)
+node_version_valida || error "node --version devolvió $(node --version 2>/dev/null || echo 'nada'); se requiere v$NODE_MINIMO o superior."
+ok "Node.js $(node --version)"
 
-" ---- 7. rust.vim -----------------------------------------------------------
-" Formatear con rustfmt al guardar (variable global: no requiere autocmd).
-let g:rustfmt_autosave = 1
+# ---------------------------------------------------------------------------
+# 1.3 coc-settings.json
+# ---------------------------------------------------------------------------
+paso "1.3 Escribiendo ~/.vim/coc-settings.json"
+mkdir -p ~/.vim
 
-" rust.vim fija 'compiler cargo' en todo búfer .rs y, durante :make, se sitúa
-" solo en el directorio del Cargo.toml más cercano. Por eso basta :make! check
-" para obtener la lista quickfix con los errores del compilador.
-" F5 y F6: revisar y compilar; los errores quedan en quickfix (]q y [q saltan).
-nnoremap <silent> <F5> :w<CR>:silent make! check<CR>:cwindow<CR>:redraw!<CR>
-nnoremap <silent> <F6> :w<CR>:silent make! build<CR>:cwindow<CR>:redraw!<CR>
-" F7 y F8: ejecutar y probar. :Crun y :Ctest (rust.vim) abren cargo en una
-" ventana de terminal, lo que permite interactuar con el programa.
-nnoremap <silent> <F7> :w<CR>:Crun<CR>
-nnoremap <silent> <F8> :w<CR>:Ctest<CR>
-" Ventana quickfix: abrir, cerrar y saltar entre errores.
-nnoremap <silent> <leader>q :copen<CR>
-nnoremap <silent> <leader>Q :cclose<CR>
-nnoremap <silent> ]q :cnext<CR>
-nnoremap <silent> [q :cprevious<CR>
+# Respaldar un coc-settings.json existente antes de sobrescribirlo
+if [[ -f ~/.vim/coc-settings.json ]]; then
+  cp ~/.vim/coc-settings.json ~/.vim/coc-settings.json.bak."$(date +%Y%m%d%H%M%S)"
+  ok "Respaldo del coc-settings.json anterior creado"
+fi
 
-" ---- 8. Colores de los menús de coc ---------------------------------------
-" Dentro de un autocmd para que sobrevivan a un :colorscheme posterior.
-function! s:ColoresCoc() abort
-  highlight Pmenu       guifg=#d4be98 guibg=#32302f ctermfg=187 ctermbg=237
-  highlight PmenuSel    guifg=#ea6962 guibg=#32302f ctermfg=167 ctermbg=237
-  highlight CocPmenu    guifg=#d4be98 guibg=#32302f ctermfg=187 ctermbg=237
-  highlight CocPmenuSel guifg=#ea6962 guibg=#32302f ctermfg=167 ctermbg=237
-  highlight CocFloating guifg=#d4be98 guibg=#32302f ctermfg=187 ctermbg=237
-  highlight CocList     guifg=#d4be98 guibg=#32302f ctermfg=187 ctermbg=237
-endfunction
-augroup ColoresCoc
-  autocmd!
-  autocmd ColorScheme * call s:ColoresCoc()
-augroup END
-call s:ColoresCoc()
+# Contenido embebido en el propio script: no se necesita ningún archivo externo
+cat > ~/.vim/coc-settings.json <<'EOF'
+{
+  "rust-analyzer.server.path": "~/.cargo/bin/rust-analyzer",
+  "rust-analyzer.updates.checkOnStartup": false,
+  "rust-analyzer.updates.prompt": "neverDownload",
+  "rust-analyzer.checkOnSave": true,
+  "rust-analyzer.inlayHints.parameterHints.enable": false,
+  "suggest.noselect": false,
+  "workspace.ignoredFolders": ["$HOME", "$HOME/.cargo/**", "$HOME/.rustup/**"]
+}
+EOF
+ok "~/.vim/coc-settings.json generado desde el contenido embebido en el script"
+
+# ---------------------------------------------------------------------------
+# 1.3.1 vim-plug
+# ---------------------------------------------------------------------------
+paso "1.3.1 Instalando vim-plug"
+curl -fLo ~/.vim/autoload/plug.vim --create-dirs \
+  https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim
+ok "vim-plug instalado en ~/.vim/autoload/plug.vim"
+
+# ---------------------------------------------------------------------------
+# 1.4 Archivos de configuración y PlugInstall
+# ---------------------------------------------------------------------------
+paso "1.4 Instalando ~/.vimrc"
+
+# Respaldar un .vimrc existente antes de sobrescribirlo
+if [[ -f ~/.vimrc ]]; then
+  cp ~/.vimrc ~/.vimrc.bak."$(date +%Y%m%d%H%M%S)"
+  ok "Respaldo del .vimrc anterior creado (~/.vimrc.bak.*)"
+fi
+
+if [[ "$VIMRC_ORIGEN" == http*://* ]]; then
+  # Descargar el .vimrc desde la URL (por defecto, el repositorio vim-recursos de GitHub)
+  echo "    Descargando: $VIMRC_ORIGEN"
+  curl -fsSL "$VIMRC_ORIGEN" -o ~/.vimrc \
+    || error "No se pudo descargar el .vimrc desde $VIMRC_ORIGEN"
+  [[ -s ~/.vimrc ]] || error "El .vimrc descargado está vacío."
+elif [[ -f "$DIR_SCRIPT/$VIMRC_ORIGEN" ]]; then
+  cp "$DIR_SCRIPT/$VIMRC_ORIGEN" ~/.vimrc
+elif [[ -f "$VIMRC_ORIGEN" ]]; then
+  cp "$VIMRC_ORIGEN" ~/.vimrc
+else
+  error "No se encontró $VIMRC_ORIGEN. Indique un archivo o URL válidos con --vimrc."
+fi
+ok "~/.vimrc instalado"
+
+paso "Ejecutando vim +PlugInstall +qall (instala los complementos y cierra)"
+vim +PlugInstall +qall
+ok "Complementos instalados"
+
+# ---------------------------------------------------------------------------
+# Resumen
+# ---------------------------------------------------------------------------
+paso "Instalación completada"
+echo "    Vim:     $VIM_VER (+terminal)"
+echo "    Node.js: $(node --version)"
+echo "    Config:  ~/.vimrc, ~/.vim/coc-settings.json, ~/.vim/autoload/plug.vim"
+echo
+echo "    Nota: la primera vez que abra un archivo .rs, coc.nvim instalará"
+echo "    la extensión coc-rust-analyzer declarada en g:coc_global_extensions."
+if [[ "$NODE_MODO" == "local" ]]; then
+  echo "    Recuerde abrir una nueva terminal o ejecutar: . ~/.bashrc"
+fi
