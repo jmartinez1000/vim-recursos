@@ -121,9 +121,14 @@ cat > ~/.vim/coc-settings.json <<'EOF'
   "rust-analyzer.updates.checkOnStartup": false,
   "rust-analyzer.updates.prompt": "neverDownload",
   "rust-analyzer.checkOnSave": true,
+  "rust-analyzer.completion.callable.snippets": "fill_arguments",
   "rust-analyzer.inlayHints.parameterHints.enable": false,
   "suggest.noselect": false,
-  "workspace.ignoredFolders": ["$HOME", "$HOME/.cargo/**", "$HOME/.rustup/**"]
+  "workspace.ignoredFolders": [
+    "$HOME",
+    "$HOME/.cargo/**",
+    "$HOME/.rustup/**"
+  ]
 }
 EOF
 ok "~/.vim/coc-settings.json generado desde el contenido embebido en el script"
@@ -150,9 +155,15 @@ fi
 if [[ "$VIMRC_ORIGEN" == http*://* ]]; then
   # Descargar el .vimrc desde la URL (por defecto, el repositorio vim-recursos de GitHub)
   echo "    Descargando: $VIMRC_ORIGEN"
-  curl -fsSL "$VIMRC_ORIGEN" -o ~/.vimrc \
+  curl -fsSL "$VIMRC_ORIGEN" -o ~/.vimrc.descargado \
     || error "No se pudo descargar el .vimrc desde $VIMRC_ORIGEN"
-  [[ -s ~/.vimrc ]] || error "El .vimrc descargado está vacío."
+  [[ -s ~/.vimrc.descargado ]] || error "El .vimrc descargado está vacío."
+  # Validar que lo descargado sea vimscript y no otro tipo de archivo (p. ej. un script bash)
+  if head -1 ~/.vimrc.descargado | grep -q '^#!'; then
+    rm -f ~/.vimrc.descargado
+    error "Lo descargado desde $VIMRC_ORIGEN no es un .vimrc: comienza con '#!' (parece un script de shell). Revise el contenido del archivo .vimrc en el repositorio."
+  fi
+  mv ~/.vimrc.descargado ~/.vimrc
 elif [[ -f "$DIR_SCRIPT/$VIMRC_ORIGEN" ]]; then
   cp "$DIR_SCRIPT/$VIMRC_ORIGEN" ~/.vimrc
 elif [[ -f "$VIMRC_ORIGEN" ]]; then
