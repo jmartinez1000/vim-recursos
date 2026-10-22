@@ -8,7 +8,9 @@ o
 bash install.sh
 
 ```
-## Espere la instalación que proporciona el script.
+# Espere la instalación que proporciona el script.
+
+## -----------------------------------------------------------------------------------------------------
 
 ## 1. Instalación paso a paso de la configuración
 
