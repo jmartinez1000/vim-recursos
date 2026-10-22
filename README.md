@@ -1,3 +1,14 @@
+## 1. Instalación acelerada
+
+### Descargue el archivo install.sh y ejecute:
+```
+chmod +x install.sh
+./install.sh
+o
+bash install.sh
+
+```
+
 ## 1. Instalación paso a paso de la configuración
 
 ### 1.1 Vim, git y curl
