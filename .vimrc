@@ -116,6 +116,8 @@ nnoremap <silent> K :call CocActionAsync('doHover')<CR>
 " Recorrer diagnósticos (errores y advertencias) del compilador.
 nmap <silent> [g <Plug>(coc-diagnostic-prev)
 nmap <silent> ]g <Plug>(coc-diagnostic-next)
+" Mostrar u ocultar las pistas de tipo de rust-analyzer en el búfer actual.
+nnoremap <silent> <leader>h :CocCommand document.toggleInlayHint<CR>
 
 " ---- 7. rust.vim -----------------------------------------------------------
 " Formatear con rustfmt al guardar (variable global: no requiere autocmd).
@@ -140,15 +142,34 @@ nnoremap <silent> [q :cprevious<CR>
 " ---- 8. Colores de los menús de coc ---------------------------------------
 " Dentro de un autocmd para que sobrevivan a un :colorscheme posterior.
 function! s:ColoresCoc() abort
+  " Menú nativo de Vim (lo usa Vim cuando coc no está activo).
   highlight Pmenu       guifg=#d4be98 guibg=#32302f ctermfg=187 ctermbg=237
-  highlight PmenuSel    guifg=#ea6962 guibg=#32302f ctermfg=167 ctermbg=237
-  highlight CocPmenu    guifg=#d4be98 guibg=#32302f ctermfg=187 ctermbg=237
-  highlight CocPmenuSel guifg=#ea6962 guibg=#32302f ctermfg=167 ctermbg=237
+  highlight PmenuSel    guifg=#1d2021 guibg=#a9b665 ctermfg=234 ctermbg=143 cterm=bold gui=bold
+  " Menú de completado de coc: el fondo del menú es CocFloating y la fila
+  " seleccionada es CocMenuSel. Si ambos comparten tono, la selección se
+  " pierde; por eso la fila activa lleva fondo verde oliva y texto oscuro.
+  " (CocPmenu y CocPmenuSel, usados en la versión original, no existen.)
   highlight CocFloating guifg=#d4be98 guibg=#32302f ctermfg=187 ctermbg=237
+  highlight CocMenuSel  guifg=#1d2021 guibg=#a9b665 ctermfg=234 ctermbg=143 cterm=bold gui=bold
+  " Caracteres que coinciden con lo tecleado, dentro de cada candidato.
+  highlight CocPumSearch guifg=#e78a4e guibg=NONE ctermfg=208 ctermbg=NONE cterm=bold gui=bold
+  " Columna de detalle (firma, origen) y barra de desplazamiento del menú.
+  highlight CocPumDetail guifg=#928374 guibg=NONE ctermfg=245 ctermbg=NONE
+  highlight CocFloatThumb guibg=#665c54 ctermbg=241
   highlight CocList     guifg=#d4be98 guibg=#32302f ctermfg=187 ctermbg=237
+  " Pistas de tipo y de parámetro que inserta rust-analyzer (": i32" junto a
+  " un let, nombres de argumentos en una llamada). Por omisión coc las pinta
+  " con el fondo de la columna de signos, que en muchos terminales es claro y
+  " produce un bloque blanco muy llamativo. Aquí: sin fondo, gris tenue y en
+  " cursiva, para que se lean como anotación y no como código.
+  highlight CocInlayHint          guifg=#7c6f64 guibg=NONE ctermfg=243 ctermbg=NONE cterm=italic gui=italic
+  highlight CocInlayHintType      guifg=#7c6f64 guibg=NONE ctermfg=243 ctermbg=NONE cterm=italic gui=italic
+  highlight CocInlayHintParameter guifg=#7c6f64 guibg=NONE ctermfg=243 ctermbg=NONE cterm=italic gui=italic
 endfunction
 augroup ColoresCoc
   autocmd!
   autocmd ColorScheme * call s:ColoresCoc()
+augroup END
+call s:ColoresCoc()
 augroup END
 call s:ColoresCoc()
